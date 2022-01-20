@@ -21,7 +21,7 @@ int (*orig_close)(int fd);
 ssize_t (*orig_read)(int fd, void *buf, size_t count); 
 ssize_t (*orig_write)(int fd, const void *buf, size_t count);
 off_t (*orig_lseek)(int fd, off_t offset, int whence);
-int (*orig_stat)(const char *pathname, struct stat *statbuf);
+int (*orig_stat)(int ver, const char *pathname, struct stat *statbuf);
 int (*orig_unlink)(const char *pathname);
 ssize_t (*orig_getdirentries)(int fd, char *buf, size_t nbytes , off_t *basep);
 struct dirtreenode* (*orig_getdirtree)(const char *path);
@@ -67,15 +67,6 @@ void send_msg(char *msg) {
 	
 	// send message to server
 	send(sockfd, msg, strlen(msg), 0);	// send message; should check return value
-	
-	// get message back
-	// rv = recv(sockfd, buf, MAXMSGLEN, 0);	// get message
-	// if (rv<0) err(1,0);			// in case something went wrong
-	// buf[rv]=0;				// null terminate string to print
-	// printf("client got messge: %s\n", buf);
-	
-	// close socket
-	// close(sockfd);
 }
 
 // This is our replacement for the open function from libc.
@@ -117,10 +108,10 @@ off_t lseek(int fd, off_t offset, int whence) {
 	return orig_lseek(fd, offset, whence);
 }
 
-int stat(const char *pathname, struct stat *statbuf) {
-	send_msg("stat\n");
-	fprintf(stderr, "mylib: stat\n");
-	return orig_stat(pathname, statbuf);
+int __xstat(int ver, const char *pathname, struct stat *statbuf) {
+	send_msg("__xstat\n");
+	fprintf(stderr, "mylib: __xstat\n");
+	return orig_stat(ver, pathname, statbuf);
 }
 
 int unlink(const char *pathname) {
@@ -155,18 +146,12 @@ void _init(void) {
 	orig_read = dlsym(RTLD_NEXT, "read");
 	orig_write = dlsym(RTLD_NEXT, "write");
 	orig_lseek = dlsym(RTLD_NEXT, "lseek");
-	orig_stat = dlsym(RTLD_NEXT, "stat");	
+	orig_stat = dlsym(RTLD_NEXT, "__xstat");	
 	orig_unlink = dlsym(RTLD_NEXT, "unlink");
 	orig_getdirentries = dlsym(RTLD_NEXT, "getdirentries");
 	orig_getdirtree  = dlsym(RTLD_NEXT, "getdirtree");
 	orig_freedirtree = dlsym(RTLD_NEXT, "freedirtree");
 	fprintf(stderr, "Init mylib\n");
-}
-
-void _fini(void) {
-	if (sockfd >= 0) {
-		close(sockfd);
-	}
 }
 
 

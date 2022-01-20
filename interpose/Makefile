@@ -1,4 +1,7 @@
-all: mylib.so
+all: mylib.so server
+
+server: server.c
+	gcc server.c -o server
 
 mylib.o: mylib.c
 	gcc -Wall -fPIC -DPIC -c mylib.c
