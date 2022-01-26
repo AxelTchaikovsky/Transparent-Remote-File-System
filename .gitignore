@@ -1,1 +1,5 @@
-./mysolution*
+mysolution*
+interpose/*.o
+interpose/*.so
+interpose/server
+interpose/foo*

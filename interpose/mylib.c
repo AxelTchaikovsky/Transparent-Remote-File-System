@@ -116,7 +116,7 @@ int open(const char *pathname, int flags, ...) {
 	int rec_err = *((int *)msg_recv + 1);
 	if (rec_fd < 0 || rec_err != 0) {
 		errno = rec_err;
-		return -1;
+		perror("Open error");
 	}
 	free(header);
 	free(msg_recv);
@@ -144,7 +144,7 @@ int close(int fd) {
 	int rec_err = *((int *)msg_recv + 1);
 	if (rec_fd < 0 || rec_err != 0) {
 		errno = rec_err;
-		return -1;
+		perror("Close error");
 	}
 	free(header);
 	free(msg_recv);
@@ -178,18 +178,17 @@ ssize_t write(int fd, const void *buf, size_t count) {
 	fprintf(stderr, "do send_recv_msg()\n");
 	send_recv_msg(header, msg_recv, sizeof(ssize_t) + sizeof(int));
 
-	// Receive information [int fd, int err] from server
-	int rec_sz = *((ssize_t *)msg_recv);
-	int rec_err = *((int *)msg_recv + 1);
+	// Receive information [ssize_t rec_sz, int err] from server
+	ssize_t rec_sz = *((ssize_t *)msg_recv);
+	int rec_err = *(int *)(msg_recv + sizeof(ssize_t));
 	if (rec_sz < 0 || rec_err != 0) {
 		errno = rec_err;
-		perror("Write error:");
-		return -1;
+		perror("Write error");
 	}
 	free(header);
 	free(msg_recv);
 
-	fprintf(stderr, "Written size: %d\n", rec_sz); 
+	fprintf(stderr, "Written size: %ld\n", rec_sz); 
 	return rec_sz;
 }
 

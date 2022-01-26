@@ -147,7 +147,9 @@ void do_open(void *open_data, int len) {
     }
 
     // Send message to client
-    fd += OFFSET;
+    if (fd >= 0) {
+        fd += OFFSET;
+    }
     void *pkg = malloc(2 * sizeof(int));
     memcpy(pkg, &fd, sizeof(int));
     memcpy(pkg + sizeof(int), &errno, sizeof(int));
@@ -168,7 +170,6 @@ void do_close(void *close_data, int len) {
     int fd = close(filedes);
 
     // Send message to client
-    fd += OFFSET;
     void *pkg = malloc(2 * sizeof(int));
     memcpy(pkg, &fd, sizeof(int));
     memcpy(pkg + sizeof(int), &errno, sizeof(int));
@@ -188,9 +189,12 @@ void do_write(void *write_data, int len) {
     fprintf(stderr, "buf: %s\n", data->buf);
     void *buf = (void *)malloc(nb + 1);
     memcpy(buf, data->buf, nb);
+
     // Call write()
     fprintf(stderr, "do write()\n");
     ssize_t sz = write(fildes, buf, nb);
+    fprintf(stderr, "Written size: %ld\n", sz);
+    perror("Server write");
 
     // Send message to client
     void *pkg = malloc(sizeof(int) + sizeof(ssize_t));
