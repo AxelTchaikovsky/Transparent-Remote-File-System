@@ -21,7 +21,9 @@ void do_open(void *open_data, int len);
 void do_close(void *close_data, int len); 
 void do_write(void *write_data, int len);
 void do_read(void *read_data, int len); 
+void do_stat(void *stat_data, int len); 
 void do_lseek(void *lseek_data, int len);
+void do_unlink(void *unlink_data, int len);
 
 int main(int argc, char**argv) {
 	char buf[MAXMSGLEN+1];
@@ -108,6 +110,12 @@ int main(int argc, char**argv) {
                 break;
             case LSEEK:
                 do_lseek(pkg->payload, total_length - 2 * sizeof(int));
+                break;
+            case STAT:
+                do_stat(pkg->payload, total_length - 2 * sizeof(int));
+                break;
+            case UNLINK:
+                do_unlink(pkg->payload, total_length - 2 * sizeof(int));
                 break;
             default:
                 fprintf(stderr, "Default...\n");
@@ -246,6 +254,57 @@ void do_lseek(void *lseek_data, int len) {
     memcpy(pkg, &loc, sizeof(off_t));
     memcpy(pkg + sizeof(off_t), &errno, sizeof(int));
     send(sessfd, pkg, sizeof(off_t) + sizeof(int), 0);
+    free(pkg);
+    free(data);
+}
+
+void do_stat(void *stat_data, int len) {
+    fprintf(stderr, "mylib: stat\n");
+    stat_payload *data = (stat_payload *)malloc(len);
+    memcpy(data, stat_data, len);
+
+    int ver = data->ver;
+    struct stat *statbuf = &data->statbuf;
+    char *path = (char *)malloc(data->path_len);
+    memcpy(path, data->pathname, data->path_len);
+    path[data->path_len] = 0;
+
+    fprintf(stderr, "ver: %d\n", data->ver);
+    fprintf(stderr, "path_len: %d\n", data->path_len);
+    fprintf(stderr, "path: %s\n", path);
+
+    // Call __xstat()
+    int ret = __xstat(ver, data->pathname, statbuf);
+
+    // Send message to client
+    void *pkg = malloc(2 * sizeof(int));
+    memcpy(pkg, &ret, sizeof(int));
+    memcpy(pkg + sizeof(int), &errno, sizeof(int));
+    send(sessfd, pkg, 2 * sizeof(int), 0);
+    free(pkg);
+    free(data);
+}
+
+void do_unlink(void *unlink_data, int len) {
+    fprintf(stderr, "mylib: unlink\n");
+    unlink_payload *data = (unlink_payload *)malloc(len);
+    memcpy(data, unlink_data, len);
+
+    char *path = (char *)malloc(data->path_len);
+    memcpy(path, data->pathname, data->path_len);
+    path[data->path_len] = 0;
+
+    fprintf(stderr, "path_len: %d\n", data->path_len);
+    fprintf(stderr, "path: %s\n", path);
+
+    // Call unlink()
+    int ret = unlink(data->pathname);
+
+    // Send message to client
+    void *pkg = malloc(2 * sizeof(int));
+    memcpy(pkg, &ret, sizeof(int));
+    memcpy(pkg + sizeof(int), &errno, sizeof(int));
+    send(sessfd, pkg, 2 * sizeof(int), 0);
     free(pkg);
     free(data);
 }

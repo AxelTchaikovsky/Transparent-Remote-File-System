@@ -6,6 +6,8 @@
 #define WRITE 2
 #define READ 3
 #define LSEEK 4
+#define STAT 5
+#define UNLINK 6
 
 typedef struct general_wrapper {
     int total_len;
@@ -35,3 +37,15 @@ typedef struct lseek_payload {
     off_t offset;
     int whence;
 } lseek_payload;
+
+typedef struct stat_payload {
+    int ver;
+    int path_len;
+    struct stat statbuf;
+    char pathname[0];
+} stat_payload;
+
+typedef struct unlink_payload {
+    int path_len;
+    char pathname[0];
+} unlink_payload; 

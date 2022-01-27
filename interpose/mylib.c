@@ -125,7 +125,7 @@ int open(const char *pathname, int flags, ...) {
 int close(int fd) {
 	fprintf(stderr, "mylib: close\n");
 	// Marshall data
-	int total_length = 3 * sizeof(int); 
+	int total_length = sizeof(general_wrapper) + sizeof(close_payload); 
 	general_wrapper *header = (general_wrapper *)malloc(total_length); 
 	header->total_len = total_length;
 	header->op_code = CLOSE;
@@ -254,15 +254,71 @@ off_t lseek(int fd, off_t offset, int whence) {
 }
 
 int __xstat(int ver, const char *pathname, struct stat *statbuf) {
-	// send_msg("__xstat\n");
 	fprintf(stderr, "mylib: __xstat\n");
-	return orig_stat(ver, pathname, statbuf);
+	int path_length = strlen(pathname) + 1;
+	int total_length = sizeof(general_wrapper) + 
+						sizeof(stat_payload) + path_length;
+	general_wrapper *header = (general_wrapper *)malloc(total_length); 
+	header->total_len = total_length;
+	header->op_code = STAT;
+	stat_payload *stat_data = (stat_payload *)header->payload;
+	stat_data->ver = ver;
+	stat_data->statbuf = *statbuf;
+	stat_data->path_len = path_length;
+	memcpy(stat_data->pathname, pathname, path_length);
+
+	fprintf(stderr, "ver: %d\n", stat_data->ver);
+	fprintf(stderr, "path_len: %d\n", stat_data->path_len);
+    fprintf(stderr, "path: %s\n", stat_data->pathname);
+
+	// Send and receive data
+	void *msg_recv = malloc(2 * sizeof(int));
+	send_recv_msg(header, msg_recv, 2 * sizeof(int));
+
+	// Receive information [int fd, int err] from server
+	int rec_fd = *((int *)msg_recv);
+	int rec_err = *((int *)msg_recv + 1);
+	if (rec_fd < 0 || rec_err != 0) {
+		errno = rec_err;
+		perror("__xstat error");
+	}
+	free(header);
+	free(msg_recv);
+
+	return rec_fd;
 }
 
 int unlink(const char *pathname) {
 	// send_msg("unlink\n");
 	fprintf(stderr, "mylib: unlink\n");
-	return orig_unlink(pathname);
+	int path_length = strlen(pathname) + 1;
+	int total_length = sizeof(general_wrapper) + 
+						sizeof(unlink_payload) + path_length;
+	general_wrapper *header = (general_wrapper *)malloc(total_length); 
+	header->total_len = total_length;
+	header->op_code = UNLINK;
+	unlink_payload *unlink_data = (unlink_payload *)header->payload;
+	unlink_data->path_len = path_length;
+	memcpy(unlink_data->pathname, pathname, path_length);
+
+	fprintf(stderr, "path_len: %d\n", unlink_data->path_len);
+    fprintf(stderr, "path: %s\n", unlink_data->pathname);
+
+	// Send and receive data
+	void *msg_recv = malloc(2 * sizeof(int));
+	send_recv_msg(header, msg_recv, 2 * sizeof(int));
+
+	// Receive information [int fd, int err] from server
+	int rec_fd = *((int *)msg_recv);
+	int rec_err = *((int *)msg_recv + 1);
+	if (rec_fd < 0 || rec_err != 0) {
+		errno = rec_err;
+		perror("unlink error");
+	}
+	free(header);
+	free(msg_recv);
+
+	return rec_fd;
 }
 
 ssize_t getdirentries(int fd, char *buf, size_t nbytes , off_t *basep) {
