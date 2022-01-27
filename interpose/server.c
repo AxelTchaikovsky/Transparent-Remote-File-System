@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <arpa/inet.h>
+#include <dirent.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -24,6 +25,7 @@ void do_read(void *read_data, int len);
 void do_stat(void *stat_data, int len); 
 void do_lseek(void *lseek_data, int len);
 void do_unlink(void *unlink_data, int len);
+void do_getdirentries(void *dir_data, int len);
 
 int main(int argc, char**argv) {
 	char buf[MAXMSGLEN+1];
@@ -116,6 +118,9 @@ int main(int argc, char**argv) {
                 break;
             case UNLINK:
                 do_unlink(pkg->payload, total_length - 2 * sizeof(int));
+                break;
+            case GETDIRENTRIES:
+                do_getdirentries(pkg->payload, total_length - 2 * sizeof(int));
                 break;
             default:
                 fprintf(stderr, "Default...\n");
@@ -308,3 +313,33 @@ void do_unlink(void *unlink_data, int len) {
     free(pkg);
     free(data);
 }
+
+void do_getdirentries(void *dir_data, int len) {
+    fprintf(stderr, "mylib: getdirentries\n");
+    getdirentries_payload *data = (getdirentries_payload *)malloc(len);
+    memcpy(data, dir_data, len);
+    // Data 
+    off_t *basep = &data->basep;
+    int alloc_sz = sizeof(ssize_t) + sizeof(int) + sizeof(off_t) + data->nbyte;
+    void *pkg = malloc(alloc_sz);
+    fprintf(stderr, "filedes: %d\n", data->fd - OFFSET);
+
+    // Call read()
+    ssize_t sz = getdirentries(data->fd - OFFSET, 
+                                pkg + sizeof(ssize_t) + sizeof(int) + sizeof(off_t), 
+                                data->nbyte, basep);
+
+    fprintf(stderr, "Getdir size: %ld\n", sz);
+    fprintf(stderr, "buf: %s\n", 
+            (char *)(pkg + sizeof(ssize_t) + sizeof(int) + sizeof(off_t)));
+    perror("Server getdirentries");
+    
+    // Send message to client
+    memcpy(pkg, &sz, sizeof(ssize_t));
+    memcpy(pkg + sizeof(ssize_t), &errno, sizeof(int));
+    memcpy(pkg + sizeof(ssize_t) + sizeof(int), basep, sizeof(off_t));
+    send(sessfd, pkg, alloc_sz, 0);
+    free(pkg);
+    free(data);
+}
+

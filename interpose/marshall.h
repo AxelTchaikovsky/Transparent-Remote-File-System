@@ -8,6 +8,7 @@
 #define LSEEK 4
 #define STAT 5
 #define UNLINK 6
+#define GETDIRENTRIES 7
 
 typedef struct general_wrapper {
     int total_len;
@@ -49,3 +50,9 @@ typedef struct unlink_payload {
     int path_len;
     char pathname[0];
 } unlink_payload; 
+
+typedef struct getdirentries_payload {
+    int fd;
+    size_t nbyte;
+    off_t basep;
+} getdirentries_payload; 

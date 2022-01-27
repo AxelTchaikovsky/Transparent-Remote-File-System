@@ -324,7 +324,41 @@ int unlink(const char *pathname) {
 ssize_t getdirentries(int fd, char *buf, size_t nbytes , off_t *basep) {
 	// send_msg("getdirentries\n");
 	fprintf(stderr, "mylib: getdirentries\n");
-	return orig_getdirentries(fd, buf, nbytes, basep);
+	int total_length = sizeof(general_wrapper) + 
+						sizeof(getdirentries_payload);
+	general_wrapper *header = (general_wrapper *)malloc(total_length); 
+	header->total_len = total_length;
+	header->op_code = GETDIRENTRIES;
+	getdirentries_payload *dir_data = (getdirentries_payload *)header->payload;
+	dir_data->fd = fd;
+	dir_data->nbyte = nbytes;
+	dir_data->basep =  *basep;
+	fprintf(stderr, "fildes: %d\n", dir_data->fd);
+	fprintf(stderr, "nbytes : %d\n", (int)dir_data->nbyte);
+	fprintf(stderr, "basep : %d\n", (int)dir_data->basep);
+	
+	// Send and receive data
+	size_t alloc_sz = sizeof(ssize_t) + sizeof(int) + sizeof(off_t) + nbytes;
+	void *msg_recv = malloc(alloc_sz);
+	fprintf(stderr, "do send_recv_msg()\n");
+	send_recv_msg(header, msg_recv, alloc_sz);
+
+	// Receive information [ssize_t rec_sz, int err] from server
+	ssize_t rec_sz = *((ssize_t *)msg_recv);
+	int rec_err = *(int *)(msg_recv + sizeof(ssize_t));
+	*basep = *(off_t *)(msg_recv + sizeof(ssize_t) + sizeof(int));
+	memcpy(buf, msg_recv + sizeof(ssize_t) + sizeof(int) + sizeof(off_t), nbytes);
+
+	if (rec_sz < 0 || rec_err != 0) {
+		errno = rec_err;
+		perror("Getdirentries error");
+	}
+	free(header);
+	free(msg_recv);
+
+	fprintf(stderr, "Getdirentries size: %ld\n", rec_sz); 
+	fprintf(stderr, "Rebase: %ld\n", rec_sz); 
+	return rec_sz;
 }
 
 struct dirtreenode* getdirtree(const char *path) {
