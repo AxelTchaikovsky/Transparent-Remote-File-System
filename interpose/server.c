@@ -21,6 +21,7 @@ void do_open(void *open_data, int len);
 void do_close(void *close_data, int len); 
 void do_write(void *write_data, int len);
 void do_read(void *read_data, int len); 
+void do_lseek(void *lseek_data, int len);
 
 int main(int argc, char**argv) {
 	char buf[MAXMSGLEN+1];
@@ -104,6 +105,9 @@ int main(int argc, char**argv) {
                 break;
             case READ:
                 do_read(pkg->payload, total_length - 2 * sizeof(int));
+                break;
+            case LSEEK:
+                do_lseek(pkg->payload, total_length - 2 * sizeof(int));
                 break;
             default:
                 fprintf(stderr, "Default...\n");
@@ -225,4 +229,23 @@ void do_write(void *write_data, int len) {
     free(data);
 }
 
+void do_lseek(void *lseek_data, int len) {
+    fprintf(stderr, "mylib: lseek\n");
+    lseek_payload *data = (lseek_payload *)malloc(len);
+    memcpy(data, lseek_data, len);
+    
+    fprintf(stderr, "fd: %d\n", data->fd - OFFSET);
+	fprintf(stderr, "offset : %ld\n", data->offset);
+	fprintf(stderr, "whence : %d\n", data->whence);
 
+    // Call lseek()
+    off_t loc = lseek(data->fd - OFFSET, data->offset, data->whence);
+
+    // Send message to client
+    void *pkg = malloc(sizeof(off_t) + sizeof(int));
+    memcpy(pkg, &loc, sizeof(off_t));
+    memcpy(pkg + sizeof(off_t), &errno, sizeof(int));
+    send(sessfd, pkg, sizeof(off_t) + sizeof(int), 0);
+    free(pkg);
+    free(data);
+}

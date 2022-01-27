@@ -222,9 +222,35 @@ ssize_t write(int fd, const void *buf, size_t count) {
 }
 
 off_t lseek(int fd, off_t offset, int whence) {
-	// send_msg("lseek\n");
 	fprintf(stderr, "mylib: lseek\n");
-	return orig_lseek(fd, offset, whence);
+	int total_length = sizeof(general_wrapper) + sizeof(lseek_payload);
+	general_wrapper *header = (general_wrapper *)malloc(total_length); 
+	header->total_len = total_length;
+	header->op_code = LSEEK;
+	lseek_payload *lseek_data = (lseek_payload *)header->payload;
+	lseek_data->fd = fd;
+	lseek_data->offset = offset;
+	lseek_data->whence = whence;
+
+	fprintf(stderr, "fd: %d\n", lseek_data->fd);
+	fprintf(stderr, "offset : %ld\n", lseek_data->offset);
+	fprintf(stderr, "whence : %d\n", lseek_data->whence);
+	// Send and receive data
+	void *msg_recv = malloc(sizeof(off_t) + sizeof(int));
+	fprintf(stderr, "fuck\n");
+	send_recv_msg(header, msg_recv, sizeof(off_t) + sizeof(int));
+
+	// Receive information [int fd, int err] from server
+	off_t rec_loc = *((off_t *)msg_recv);
+	int rec_err = *(int *)(msg_recv + sizeof(off_t));
+	if (rec_loc < 0 || rec_err != 0) {
+		errno = rec_err;
+		perror("Lseek error");
+	}
+	free(header);
+	free(msg_recv);
+
+	return rec_loc;
 }
 
 int __xstat(int ver, const char *pathname, struct stat *statbuf) {

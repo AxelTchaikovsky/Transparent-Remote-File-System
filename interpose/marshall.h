@@ -5,6 +5,7 @@
 #define CLOSE 1
 #define WRITE 2
 #define READ 3
+#define LSEEK 4
 
 typedef struct general_wrapper {
     int total_len;
@@ -28,3 +29,9 @@ typedef struct read_write_payload {
     size_t nbyte;
     char buf[0];
 } read_write_payload;
+
+typedef struct lseek_payload {
+    int fd;
+    off_t offset;
+    int whence;
+} lseek_payload;
