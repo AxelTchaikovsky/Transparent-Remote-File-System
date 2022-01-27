@@ -20,6 +20,7 @@ int sessfd = -1;
 void do_open(void *open_data, int len);
 void do_close(void *close_data, int len); 
 void do_write(void *write_data, int len);
+void do_read(void *read_data, int len); 
 
 int main(int argc, char**argv) {
 	char buf[MAXMSGLEN+1];
@@ -51,8 +52,6 @@ int main(int argc, char**argv) {
 	// start listening for connections
 	rv = listen(sockfd, 5);
 	if (rv<0) err(1,0);
-	
-	
 
 	// main server loop
 	while (1) {
@@ -103,14 +102,15 @@ int main(int argc, char**argv) {
             case WRITE:
                 do_write(pkg->payload, total_length - 2 * sizeof(int));
                 break;
+            case READ:
+                do_read(pkg->payload, total_length - 2 * sizeof(int));
+                break;
             default:
-                // either client closed connection, or error
-                // if (rv<0) err(1,0);
                 fprintf(stderr, "Default...\n");
                 break;
             }
-            if (rv<0) err(1,0);
             free(pkg);
+            if (rv<0) err(1,0);
             if (op_code == -1) {
                 break;
             }
@@ -127,12 +127,14 @@ void do_open(void *open_data, int len) {
     fprintf(stderr, "mylib: open\n");
     open_payload *data = (open_payload *)malloc(len);
     memcpy(data, open_data, len);
+
     // Data [int total_length, int op_code, int flags, mode_t mode, char *pathname]
     int flags = data->flags;
     mode_t mode = data->mode;
     char *path = (char *)malloc(data->path_len);
     memcpy(path, data->path, data->path_len);
     path[data->path_len] = 0;
+
     fprintf(stderr, "flags: %d\n", flags);
     fprintf(stderr, "mode: %d\n", mode);
     fprintf(stderr, "path_len: %d\n", data->path_len);
@@ -162,12 +164,11 @@ void do_close(void *close_data, int len) {
     fprintf(stderr, "mylib: close\n");
     close_payload *data = (close_payload *)malloc(len);
     memcpy(data, close_data, len);
-    // Data
-    int filedes = data->filedes - OFFSET; 
-    fprintf(stderr, "filedes: %d\n", filedes);
+    // Data 
+    fprintf(stderr, "filedes: %d\n", data->filedes - OFFSET);
 
     // Call close()
-    int fd = close(filedes);
+    int fd = close(data->filedes - OFFSET);
 
     // Send message to client
     void *pkg = malloc(2 * sizeof(int));
@@ -178,21 +179,40 @@ void do_close(void *close_data, int len) {
     free(data);
 }
 
+void do_read(void *read_data, int len) {
+    fprintf(stderr, "mylib: read\n");
+    read_write_payload *data = (read_write_payload *)malloc(len);
+    memcpy(data, read_data, len);
+    // Data 
+    fprintf(stderr, "filedes: %d\n", data->fildes - OFFSET);
+    void *pkg = malloc(sizeof(ssize_t) + sizeof(int) + data->nbyte);
+
+    // Call read()
+    ssize_t sz = read(data->fildes - OFFSET, 
+                        pkg + sizeof(ssize_t) + sizeof(int), data->nbyte);
+    fprintf(stderr, "Read size: %ld\n", sz);
+    fprintf(stderr, "buf: %s\n", (char *)(pkg + sizeof(ssize_t) + sizeof(int)));
+    perror("Server read");
+    
+    // Send message to client
+    memcpy(pkg, &sz, sizeof(ssize_t));
+    memcpy(pkg + sizeof(ssize_t), &errno, sizeof(int));
+    send(sessfd, pkg, sizeof(ssize_t) + sizeof(int) + data->nbyte, 0);
+    free(pkg);
+    free(data);
+}
+
+
 void do_write(void *write_data, int len) {
     fprintf(stderr, "mylib: write\n");
-    write_payload *data = (write_payload *)malloc(len);
+    read_write_payload *data = (read_write_payload *)malloc(len);
     memcpy(data, write_data, len);
     // Data 
-    int fildes = data->fildes - OFFSET; 
-    size_t nb = data->nbyte;
-    fprintf(stderr, "filedes: %d\n", fildes);
+    fprintf(stderr, "filedes: %d\n", data->fildes - OFFSET);
     fprintf(stderr, "buf: %s\n", data->buf);
-    void *buf = (void *)malloc(nb + 1);
-    memcpy(buf, data->buf, nb);
 
     // Call write()
-    fprintf(stderr, "do write()\n");
-    ssize_t sz = write(fildes, buf, nb);
+    ssize_t sz = write(data->fildes - OFFSET, data->buf, data->nbyte);
     fprintf(stderr, "Written size: %ld\n", sz);
     perror("Server write");
 

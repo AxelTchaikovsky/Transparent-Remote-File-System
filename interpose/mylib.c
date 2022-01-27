@@ -48,7 +48,6 @@ void send_recv_msg(general_wrapper *msg_sent, void *msg_recv, int recv_len) {
 	// Get environment variable indicating the port of the server
 	serverport = getenv("serverport15440");
 	if (!serverport) {
-		fprintf(stderr, "Environment variable serverport15440 not found.  Using 15440\n");
 		serverport = "15440";
 	}
 	port = (unsigned short)atoi(serverport);
@@ -105,7 +104,6 @@ int open(const char *pathname, int flags, ...) {
 	fprintf(stderr, "path_len: %d\n", open_data->path_len);
     fprintf(stderr, "path: %s\n", open_data->path);
 	fprintf(stderr, "mode_t size: %ld\n", sizeof(mode_t));
-	
 
 	// Send and receive data
 	void *msg_recv = malloc(2 * sizeof(int));
@@ -153,20 +151,51 @@ int close(int fd) {
 }
 
 ssize_t read(int fd, void *buf, size_t count) {
-	// send_msg("read\n");
 	fprintf(stderr, "mylib: read\n");
-	return 8;
+	// Marshall data [int total_length, int op_code, int fildes, size_t nbytes] 
+	// In read, no need to send buf, we only need to receive what is read from the 
+	// server side. 
+	int total_length = sizeof(general_wrapper) + 
+						sizeof(read_write_payload);
+	general_wrapper *header = (general_wrapper *)malloc(total_length); 
+	header->total_len = total_length;
+	header->op_code = READ;
+	read_write_payload *read_data = (read_write_payload *)header->payload;
+	read_data->fildes = fd;
+	read_data->nbyte = count;
+	fprintf(stderr, "fildes: %d\n", read_data->fildes);
+	fprintf(stderr, "nbytes : %d\n", (int)read_data->nbyte);
+	
+	// Send and receive data
+	void *msg_recv = malloc(sizeof(ssize_t) + sizeof(int) + count);
+	fprintf(stderr, "do send_recv_msg()\n");
+	send_recv_msg(header, msg_recv, sizeof(ssize_t) + sizeof(int) + count);
+
+	// Receive information [ssize_t rec_sz, int err] from server
+	ssize_t rec_sz = *((ssize_t *)msg_recv);
+	int rec_err = *(int *)(msg_recv + sizeof(ssize_t));
+	memcpy(buf, msg_recv + sizeof(int) + sizeof(ssize_t), count);
+
+	if (rec_sz < 0 || rec_err != 0) {
+		errno = rec_err;
+		perror("Read error");
+	}
+	free(header);
+	free(msg_recv);
+
+	fprintf(stderr, "Read size: %ld\n", rec_sz); 
+	return rec_sz;
 }
 
 ssize_t write(int fd, const void *buf, size_t count) {
 	fprintf(stderr, "mylib: write\n");
 	// Marshall data [int total_length, int op_code, int fildes, size_t nbytes, char buf[0]]
 	int total_length = sizeof(general_wrapper) + 
-						sizeof(write_payload) + count;
+						sizeof(read_write_payload) + count;
 	general_wrapper *header = (general_wrapper *)malloc(total_length); 
 	header->total_len = total_length;
 	header->op_code = WRITE;
-	write_payload *write_data = (write_payload *)header->payload;
+	read_write_payload *write_data = (read_write_payload *)header->payload;
 	write_data->fildes = fd;
 	write_data->nbyte = count;
 	memcpy(write_data->buf, buf, count);
@@ -174,7 +203,7 @@ ssize_t write(int fd, const void *buf, size_t count) {
 	fprintf(stderr, "nbytes : %d\n", (int)write_data->nbyte);
 	
 	// Send and receive data
-	void *msg_recv = malloc(2 * sizeof(int));
+	void *msg_recv = malloc(sizeof(ssize_t) + sizeof(int));
 	fprintf(stderr, "do send_recv_msg()\n");
 	send_recv_msg(header, msg_recv, sizeof(ssize_t) + sizeof(int));
 

@@ -4,6 +4,7 @@
 #define OPEN 0
 #define CLOSE 1
 #define WRITE 2
+#define READ 3
 
 typedef struct general_wrapper {
     int total_len;
@@ -22,9 +23,8 @@ typedef struct close_payload {
     int filedes;
 } close_payload;
 
-typedef struct write_payload {
+typedef struct read_write_payload {
     int fildes;
     size_t nbyte;
     char buf[0];
-} write_payload;
-
+} read_write_payload;
