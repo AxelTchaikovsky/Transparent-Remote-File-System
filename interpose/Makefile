@@ -10,5 +10,5 @@ server: server.c marshall.h ../include/dirtree.h
 	gcc -Wall -Werror -std=c99 server.c -o server -I../include -L../lib -ldirtree
 
 clean:
-	rm -f *.o *.so
+	rm -f *.o *.so server
 

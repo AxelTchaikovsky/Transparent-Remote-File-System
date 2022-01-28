@@ -4,7 +4,7 @@
 
 ## Description
 
-A server process to provide the remote file services.
+A server process to provide concurrent remote file services.
 
 A client stub library to perform RPCs.
 

@@ -11,6 +11,9 @@
 #define GETDIRENTRIES 7
 #define GETDIRTREE 8
 
+// File descriptor offset
+#define OFFSET 800
+
 typedef struct general_wrapper {
     int total_len;
     int op_code;

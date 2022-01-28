@@ -1,7 +1,8 @@
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <arpa/inet.h>
-#include <dirent.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -9,13 +10,13 @@
 #include <sys/socket.h>
 #include <string.h>
 #include <unistd.h>
+#include <dirent.h>
 #include <err.h>
 #include <errno.h>
 #include "marshall.h"
 #include "../include/dirtree.h"
 
 #define MAXMSGLEN 100
-#define OFFSET 800
 
 int sessfd = -1;
 
@@ -219,13 +220,13 @@ void do_read(void *read_data, int len) {
     ssize_t sz = read(data->fildes - OFFSET, 
                         pkg + sizeof(ssize_t) + sizeof(int), data->nbyte);
     fprintf(stderr, "Read size: %ld\n", sz);
-    fprintf(stderr, "buf: %s\n", (char *)(pkg + sizeof(ssize_t) + sizeof(int)));
+    // fprintf(stderr, "buf: %s\n", (char *)(pkg + sizeof(ssize_t) + sizeof(int)));
     perror("Server read");
     
     // Send message to client
     memcpy(pkg, &sz, sizeof(ssize_t));
     memcpy(pkg + sizeof(ssize_t), &errno, sizeof(int));
-    send(sessfd, pkg, sizeof(ssize_t) + sizeof(int) + data->nbyte, 0);
+    send(sessfd, pkg, sizeof(ssize_t) + sizeof(int) + sz, 0);
     free(pkg);
     free(data);
 }

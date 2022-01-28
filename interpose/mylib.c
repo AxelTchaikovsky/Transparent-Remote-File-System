@@ -85,6 +85,7 @@ void send_recv_msg(general_wrapper *msg_sent, void *msg_recv, int recv_len) {
 
 	fprintf(stderr, "Get message From server...\n");
 	rv = recv(sockfd, msg_recv, recv_len, 0);	// get message
+
 	if (rv<0) err(1,0);			// in case something went wrong
 	fprintf(stderr, "Message Received...\n");
 }
@@ -150,6 +151,11 @@ int open(const char *pathname, int flags, ...) {
  */
 int close(int fd) {
 	fprintf(stderr, "mylib: close\n");
+
+	if (fd < OFFSET) {
+		return orig_close(fd);
+	}
+
 	// Marshall data
 	int total_length = sizeof(general_wrapper) + sizeof(close_payload); 
 	general_wrapper *header = (general_wrapper *)malloc(total_length); 
@@ -192,6 +198,11 @@ int close(int fd) {
  */
 ssize_t read(int fd, void *buf, size_t count) {
 	fprintf(stderr, "mylib: read\n");
+
+	if (fd < OFFSET) {
+		return orig_read(fd, buf, count);
+	}
+
 	// Marshall data [int total_length, int op_code, int fildes, size_t nbytes] 
 	// In read, no need to send buf, we only need to receive what is read from the 
 	// server side. 
@@ -207,23 +218,50 @@ ssize_t read(int fd, void *buf, size_t count) {
 	fprintf(stderr, "nbytes : %d\n", (int)read_data->nbyte);
 	
 	// Send and receive data
-	void *msg_recv = malloc(sizeof(ssize_t) + sizeof(int) + count);
+	void *msg_recv = malloc(sizeof(ssize_t) + sizeof(int));
 	fprintf(stderr, "do send_recv_msg()\n");
-	send_recv_msg(header, msg_recv, sizeof(ssize_t) + sizeof(int) + count);
+	send_recv_msg(header, msg_recv, sizeof(ssize_t) + sizeof(int));
 
 	// Receive information [ssize_t rec_sz, int err] from server
 	ssize_t rec_sz = *((ssize_t *)msg_recv);
 	int rec_err = *(int *)(msg_recv + sizeof(ssize_t));
-	memcpy(buf, msg_recv + sizeof(int) + sizeof(ssize_t), count);
+	fprintf(stderr, "Read size: %ld\n", rec_sz); 
 
-	if (rec_sz < 0 || rec_err != 0) {
+	if (rec_sz <= 0 || rec_err != 0) {
 		errno = rec_err;
 		perror("Read error");
+		free(header);
+		fprintf(stderr, "header freed\n");
+		free(msg_recv);
+		fprintf(stderr, "msg_recv freed\n");
+		return rec_sz;
 	}
-	free(header);
-	free(msg_recv);
+	
+	ssize_t read  = 0; 
+	ssize_t rv = 0; 
+	char buffer[101];
+	char *pkg = (char *)malloc(rec_sz);
+	while ((rv = recv(sockfd, buffer, MAXMSGLEN, 0)) > 0) {
+		memcpy((void *)pkg + read, buffer, rv);
+		read += rv;
+		if (read == rec_sz) {
+			fprintf(stderr, "Client got read message...\n"); 
+			break; 
+		}
+		if (read > rec_sz) {
+			fprintf(stderr, "oversize read ...: %ld\n", read);
+			exit(-1);
+		}
+	}
+	memcpy(buf, pkg, rec_sz);
+	free(pkg);
+	fprintf(stderr, "pkg freed\n");
 
-	fprintf(stderr, "Read size: %ld\n", rec_sz); 
+	free(header);
+	fprintf(stderr, "header freed\n");
+	free(msg_recv);
+	fprintf(stderr, "msg_recv freed\n");
+
 	return rec_sz;
 }
 
@@ -236,6 +274,10 @@ ssize_t read(int fd, void *buf, size_t count) {
  */
 ssize_t write(int fd, const void *buf, size_t count) {
 	fprintf(stderr, "mylib: write\n");
+
+	if (fd < OFFSET) {
+		return orig_write(fd, buf, count);
+	}
 	
 	int total_length = sizeof(general_wrapper) + 
 						sizeof(read_write_payload) + count;
