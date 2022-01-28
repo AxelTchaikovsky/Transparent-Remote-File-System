@@ -72,6 +72,10 @@ int main(int argc, char**argv) {
             err(1,0);
             continue;
         }
+
+        if (fork() != 0) {
+            continue;
+        }
         
         while (1) {
             int loop_cnt = 0, read = 0, total_length = 0; 
@@ -382,6 +386,7 @@ void do_getdirtree(void *dir_data, int len) {
     send(sessfd, pkg, sizeof(size_t) + sizeof(int) + tree_length, 0);
     free(pkg);
     free(data);
+    freedirtree(root);
 }
 
 size_t tree_len(struct dirtreenode *root) {
