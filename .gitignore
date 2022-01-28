@@ -3,3 +3,4 @@ interpose/*.o
 interpose/*.so
 interpose/server
 interpose/foo*
+interpose/foo
