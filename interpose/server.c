@@ -1,3 +1,19 @@
+/**
+ * @file server.c
+ * @author Adam Li (zli3@andrew.cmu.edu)
+ * @brief A concurrent server process to provide the remote file services. For the 
+ * following standard C library calls: open, close, read, write, lseek, 
+ * stat, unlink, getdirentries and the non-standard getdirtree and 
+ * freedirtree calls.
+ * 
+ * @date 2022-01-28
+ * 
+ * @copyright Copyright (c) 2022
+ * 
+ */
+
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <arpa/inet.h>
@@ -8,18 +24,27 @@
 #include <sys/socket.h>
 #include <string.h>
 #include <unistd.h>
+#include <dirent.h>
 #include <err.h>
 #include <errno.h>
 #include "marshall.h"
+#include "../include/dirtree.h"
 
 #define MAXMSGLEN 100
-#define OFFSET 800
 
 int sessfd = -1;
 
 void do_open(void *open_data, int len);
 void do_close(void *close_data, int len); 
 void do_write(void *write_data, int len);
+void do_read(void *read_data, int len); 
+void do_stat(void *stat_data, int len); 
+void do_lseek(void *lseek_data, int len);
+void do_unlink(void *unlink_data, int len);
+void do_getdirentries(void *dir_data, int len);
+void do_getdirtree(void *dir_data, int len); 
+size_t tree_len(struct dirtreenode *root);
+size_t serialize(struct dirtreenode *root, char *str); 
 
 int main(int argc, char**argv) {
 	char buf[MAXMSGLEN+1];
@@ -51,8 +76,6 @@ int main(int argc, char**argv) {
 	// start listening for connections
 	rv = listen(sockfd, 5);
 	if (rv<0) err(1,0);
-	
-	
 
 	// main server loop
 	while (1) {
@@ -62,6 +85,10 @@ int main(int argc, char**argv) {
 	    fprintf(stderr, "-----Setting up session %d-----\n", sessfd); 
         if (sessfd < 0) {
             err(1,0);
+            continue;
+        }
+
+        if (fork() != 0) {
             continue;
         }
         
@@ -103,14 +130,30 @@ int main(int argc, char**argv) {
             case WRITE:
                 do_write(pkg->payload, total_length - 2 * sizeof(int));
                 break;
+            case READ:
+                do_read(pkg->payload, total_length - 2 * sizeof(int));
+                break;
+            case LSEEK:
+                do_lseek(pkg->payload, total_length - 2 * sizeof(int));
+                break;
+            case STAT:
+                do_stat(pkg->payload, total_length - 2 * sizeof(int));
+                break;
+            case UNLINK:
+                do_unlink(pkg->payload, total_length - 2 * sizeof(int));
+                break;
+            case GETDIRENTRIES:
+                do_getdirentries(pkg->payload, total_length - 2 * sizeof(int));
+                break;
+            case GETDIRTREE:
+                do_getdirtree(pkg->payload, total_length - 2 * sizeof(int));
+                break;
             default:
-                // either client closed connection, or error
-                // if (rv<0) err(1,0);
                 fprintf(stderr, "Default...\n");
                 break;
             }
-            if (rv<0) err(1,0);
             free(pkg);
+            if (rv<0) err(1,0);
             if (op_code == -1) {
                 break;
             }
@@ -127,12 +170,14 @@ void do_open(void *open_data, int len) {
     fprintf(stderr, "mylib: open\n");
     open_payload *data = (open_payload *)malloc(len);
     memcpy(data, open_data, len);
+
     // Data [int total_length, int op_code, int flags, mode_t mode, char *pathname]
     int flags = data->flags;
     mode_t mode = data->mode;
     char *path = (char *)malloc(data->path_len);
     memcpy(path, data->path, data->path_len);
     path[data->path_len] = 0;
+
     fprintf(stderr, "flags: %d\n", flags);
     fprintf(stderr, "mode: %d\n", mode);
     fprintf(stderr, "path_len: %d\n", data->path_len);
@@ -147,7 +192,9 @@ void do_open(void *open_data, int len) {
     }
 
     // Send message to client
-    fd += OFFSET;
+    if (fd >= 0) {
+        fd += OFFSET;
+    }
     void *pkg = malloc(2 * sizeof(int));
     memcpy(pkg, &fd, sizeof(int));
     memcpy(pkg + sizeof(int), &errno, sizeof(int));
@@ -160,15 +207,13 @@ void do_close(void *close_data, int len) {
     fprintf(stderr, "mylib: close\n");
     close_payload *data = (close_payload *)malloc(len);
     memcpy(data, close_data, len);
-    // Data
-    int filedes = data->filedes - OFFSET; 
-    fprintf(stderr, "filedes: %d\n", filedes);
+    // Data 
+    fprintf(stderr, "filedes: %d\n", data->filedes - OFFSET);
 
     // Call close()
-    int fd = close(filedes);
+    int fd = close(data->filedes - OFFSET);
 
     // Send message to client
-    fd += OFFSET;
     void *pkg = malloc(2 * sizeof(int));
     memcpy(pkg, &fd, sizeof(int));
     memcpy(pkg + sizeof(int), &errno, sizeof(int));
@@ -177,20 +222,42 @@ void do_close(void *close_data, int len) {
     free(data);
 }
 
+void do_read(void *read_data, int len) {
+    fprintf(stderr, "mylib: read\n");
+    read_write_payload *data = (read_write_payload *)malloc(len);
+    memcpy(data, read_data, len);
+    // Data 
+    fprintf(stderr, "filedes: %d\n", data->fildes - OFFSET);
+    void *pkg = malloc(sizeof(ssize_t) + sizeof(int) + data->nbyte);
+
+    // Call read()
+    ssize_t sz = read(data->fildes - OFFSET, 
+                        pkg + sizeof(ssize_t) + sizeof(int), data->nbyte);
+    fprintf(stderr, "Read size: %ld\n", sz);
+    // fprintf(stderr, "buf: %s\n", (char *)(pkg + sizeof(ssize_t) + sizeof(int)));
+    perror("Server read");
+    
+    // Send message to client
+    memcpy(pkg, &sz, sizeof(ssize_t));
+    memcpy(pkg + sizeof(ssize_t), &errno, sizeof(int));
+    send(sessfd, pkg, sizeof(ssize_t) + sizeof(int) + sz, 0);
+    free(pkg);
+    free(data);
+}
+
+
 void do_write(void *write_data, int len) {
     fprintf(stderr, "mylib: write\n");
-    write_payload *data = (write_payload *)malloc(len);
+    read_write_payload *data = (read_write_payload *)malloc(len);
     memcpy(data, write_data, len);
     // Data 
-    int fildes = data->fildes - OFFSET; 
-    size_t nb = data->nbyte;
-    fprintf(stderr, "filedes: %d\n", fildes);
+    fprintf(stderr, "filedes: %d\n", data->fildes - OFFSET);
     fprintf(stderr, "buf: %s\n", data->buf);
-    void *buf = (void *)malloc(nb + 1);
-    memcpy(buf, data->buf, nb);
+
     // Call write()
-    fprintf(stderr, "do write()\n");
-    ssize_t sz = write(fildes, buf, nb);
+    ssize_t sz = write(data->fildes - OFFSET, data->buf, data->nbyte);
+    fprintf(stderr, "Written size: %ld\n", sz);
+    perror("Server write");
 
     // Send message to client
     void *pkg = malloc(sizeof(int) + sizeof(ssize_t));
@@ -201,4 +268,178 @@ void do_write(void *write_data, int len) {
     free(data);
 }
 
+void do_lseek(void *lseek_data, int len) {
+    fprintf(stderr, "mylib: lseek\n");
+    lseek_payload *data = (lseek_payload *)malloc(len);
+    memcpy(data, lseek_data, len);
+    
+    fprintf(stderr, "fd: %d\n", data->fd - OFFSET);
+	fprintf(stderr, "offset : %ld\n", data->offset);
+	fprintf(stderr, "whence : %d\n", data->whence);
+
+    // Call lseek()
+    off_t loc = lseek(data->fd - OFFSET, data->offset, data->whence);
+
+    // Send message to client
+    void *pkg = malloc(sizeof(off_t) + sizeof(int));
+    memcpy(pkg, &loc, sizeof(off_t));
+    memcpy(pkg + sizeof(off_t), &errno, sizeof(int));
+    send(sessfd, pkg, sizeof(off_t) + sizeof(int), 0);
+    free(pkg);
+    free(data);
+}
+
+void do_stat(void *stat_data, int len) {
+    fprintf(stderr, "mylib: stat\n");
+    stat_payload *data = (stat_payload *)malloc(len);
+    memcpy(data, stat_data, len);
+
+    int ver = data->ver;
+    struct stat *statbuf = &data->statbuf;
+    char *path = (char *)malloc(data->path_len);
+    memcpy(path, data->pathname, data->path_len);
+    path[data->path_len] = 0;
+
+    fprintf(stderr, "ver: %d\n", data->ver);
+    fprintf(stderr, "path_len: %d\n", data->path_len);
+    fprintf(stderr, "path: %s\n", path);
+
+    // Call __xstat()
+    int ret = __xstat(ver, data->pathname, statbuf);
+
+    // Send message to client
+    void *pkg = malloc(2 * sizeof(int));
+    memcpy(pkg, &ret, sizeof(int));
+    memcpy(pkg + sizeof(int), &errno, sizeof(int));
+    send(sessfd, pkg, 2 * sizeof(int), 0);
+    free(pkg);
+    free(data);
+}
+
+void do_unlink(void *unlink_data, int len) {
+    fprintf(stderr, "mylib: unlink\n");
+    unlink_payload *data = (unlink_payload *)malloc(len);
+    memcpy(data, unlink_data, len);
+
+    char *path = (char *)malloc(data->path_len);
+    memcpy(path, data->pathname, data->path_len);
+    path[data->path_len] = 0;
+
+    fprintf(stderr, "path_len: %d\n", data->path_len);
+    fprintf(stderr, "path: %s\n", path);
+
+    // Call unlink()
+    int ret = unlink(data->pathname);
+
+    // Send message to client
+    void *pkg = malloc(2 * sizeof(int));
+    memcpy(pkg, &ret, sizeof(int));
+    memcpy(pkg + sizeof(int), &errno, sizeof(int));
+    send(sessfd, pkg, 2 * sizeof(int), 0);
+    free(pkg);
+    free(data);
+}
+
+void do_getdirentries(void *dir_data, int len) {
+    fprintf(stderr, "mylib: getdirentries\n");
+    getdirentries_payload *data = (getdirentries_payload *)malloc(len);
+    memcpy(data, dir_data, len);
+    // Data 
+    off_t *basep = &data->basep;
+    int alloc_sz = sizeof(ssize_t) + sizeof(int) + sizeof(off_t) + data->nbyte;
+    void *pkg = malloc(alloc_sz);
+    fprintf(stderr, "filedes: %d\n", data->fd - OFFSET);
+
+    // Call read()
+    ssize_t sz = getdirentries(data->fd - OFFSET, 
+                                pkg + sizeof(ssize_t) + sizeof(int) + sizeof(off_t), 
+                                data->nbyte, basep);
+
+    fprintf(stderr, "Getdir size: %ld\n", sz);
+    fprintf(stderr, "buf: %s\n", 
+            (char *)(pkg + sizeof(ssize_t) + sizeof(int) + sizeof(off_t)));
+    perror("Server getdirentries");
+    
+    // Send message to client
+    memcpy(pkg, &sz, sizeof(ssize_t));
+    memcpy(pkg + sizeof(ssize_t), &errno, sizeof(int));
+    memcpy(pkg + sizeof(ssize_t) + sizeof(int), basep, sizeof(off_t));
+    send(sessfd, pkg, alloc_sz, 0);
+    free(pkg);
+    free(data);
+}
+
+void do_getdirtree(void *dir_data, int len) {
+    fprintf(stderr, "mylib: unlink\n");
+    getdirtree_payload *data = (getdirtree_payload *)malloc(len);
+    memcpy(data, dir_data, len);
+
+    char *path = (char *)malloc(data->path_len);
+    memcpy(path, data->pathname, data->path_len);
+    path[data->path_len] = 0;
+
+    fprintf(stderr, "path_len: %d\n", data->path_len);
+    fprintf(stderr, "path: %s\n", path);
+
+    // Call getdirtree()
+    struct dirtreenode* root = getdirtree(data->pathname);
+
+    size_t tree_length = 0;
+    char *serial = NULL;
+    if (root)  {
+        // Serialize tree
+        tree_length = tree_len(root);
+        serial = (char *)malloc(tree_len(root));
+        serialize(root, serial);
+    }
+
+    // Send message to client
+    void *pkg = malloc(sizeof(size_t) + sizeof(int) + tree_length);
+    memcpy(pkg, &tree_length, sizeof(size_t));
+    memcpy(pkg + sizeof(size_t), &errno, sizeof(int));
+    memcpy(pkg + sizeof(size_t) + sizeof(int), serial, tree_length);
+    send(sessfd, pkg, sizeof(size_t) + sizeof(int) + tree_length, 0);
+    free(pkg);
+    free(data);
+    freedirtree(root); // Free tree root after data is sent back to client
+}
+
+/**
+ * @brief Traverse the tree using DFS, calculate the serialization size. 
+ * 
+ * @param root 
+ * @return size_t Total size needed to be allocated for the serialization 
+ * string. 
+ */
+size_t tree_len(struct dirtreenode *root) {
+    size_t len = sizeof(size_t) + sizeof(int) + strlen(root->name) + 1;
+    for (int i = 0; i < root->num_subdirs; i++) {
+        len += tree_len(root->subdirs[i]);
+    }
+    return len;
+}
+
+/**
+ * @brief Serialize the non-binary tree structure into a string using DFS. 
+ * Complexity O(N)
+ * 
+ * @param root Non-binary tree pointer. 
+ * @param str Serialized string. 
+ *  element structure: [size_t path_len, int children_num, char *path]
+ * @return size_t Size of the tree whose root is "root". 
+ */
+size_t serialize(struct dirtreenode *root, char *str) {
+    size_t itr = 0, path_len = strlen(root->name) + 1;
+    memcpy(str + itr, &path_len, sizeof(size_t));
+    itr += sizeof(size_t);
+    memcpy(str + itr, &root->num_subdirs, sizeof(int));
+    itr += sizeof(int);
+    memcpy(str + itr, root->name, strlen(root->name) + 1);
+    itr += (strlen(root->name) + 1);
+
+    for (int i = 0; i < root->num_subdirs; i++) {
+        itr += serialize(root->subdirs[i], str + itr); 
+    }
+    return itr;
+}
 
