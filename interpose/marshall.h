@@ -1,3 +1,14 @@
+/**
+ * @file marshall.h
+ * @author Adam Li (zli3@andrew.cmu.edu)
+ * @brief Data structures protocal for marshalling and unmarshalling data. 
+ * 
+ * @date 2022-01-28
+ * 
+ * @copyright Copyright (c) 2022
+ * 
+ */
+
 #include <sys/types.h>
 
 // The operation code name for functions

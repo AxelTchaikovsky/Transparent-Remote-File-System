@@ -1,3 +1,17 @@
+/**
+ * @file server.c
+ * @author Adam Li (zli3@andrew.cmu.edu)
+ * @brief A concurrent server process to provide the remote file services. For the 
+ * following standard C library calls: open, close, read, write, lseek, 
+ * stat, unlink, getdirentries and the non-standard getdirtree and 
+ * freedirtree calls.
+ * 
+ * @date 2022-01-28
+ * 
+ * @copyright Copyright (c) 2022
+ * 
+ */
+
 #define _GNU_SOURCE
 
 #include <stdio.h>
@@ -387,7 +401,7 @@ void do_getdirtree(void *dir_data, int len) {
     send(sessfd, pkg, sizeof(size_t) + sizeof(int) + tree_length, 0);
     free(pkg);
     free(data);
-    freedirtree(root);
+    freedirtree(root); // Free tree root after data is sent back to client
 }
 
 /**

@@ -1,3 +1,17 @@
+/**
+ * @file mylib.c
+ * @author Adam Li (zli3@andrew.cmu.edu)
+ * @brief A client stub library to perform Remote Procedure Calls. For the 
+ * following standard C library calls: open, close, read, write, lseek, 
+ * stat, unlink, getdirentries and the non-standard getdirtree and 
+ * freedirtree calls.
+ * 
+ * @date 2022-01-28
+ * 
+ * @copyright Copyright (c) 2022
+ * 
+ */
+
 #define _GNU_SOURCE
 
 #include <dlfcn.h>
@@ -119,6 +133,7 @@ int open(const char *pathname, int flags, ...) {
 	open_data->mode = m;
 	open_data->path_len = path_length;
 	memcpy(open_data->path, pathname, path_length);
+
 	fprintf(stderr, "flags: %d\n", flags);
 	fprintf(stderr, "mode: %d\n", m);
 	fprintf(stderr, "path_len: %d\n", open_data->path_len);
@@ -145,6 +160,7 @@ int open(const char *pathname, int flags, ...) {
 /**
  * @brief Replacement for the close function from libc. Closes a file descriptor on remote server, 
  * so that it no longer refers to any file and may be reused. 
+ * If fd > OFFSET, handle file in remote server, if fd < OFFSET, handle local. 
  * 
  * @return int returns  zero on success.  On error, -1 is returned, and errno is
        set appropriately.
@@ -184,6 +200,7 @@ int close(int fd) {
 
 /**
  * @brief read() attempts to read up to count bytes from file descriptor fd into the buffer starting at buf.
+ * If fd > OFFSET, handle file in remote server, if fd < OFFSET, handle local.
  * 
  * @return ssize_t On success, the number of bytes read is returned (zero  indicates  end  of
  * file), and the file position is advanced by this number.  It is not an er
@@ -227,16 +244,16 @@ ssize_t read(int fd, void *buf, size_t count) {
 	int rec_err = *(int *)(msg_recv + sizeof(ssize_t));
 	fprintf(stderr, "Read size: %ld\n", rec_sz); 
 
+	// Error handling and final read (read size = 0) handling
 	if (rec_sz <= 0 || rec_err != 0) {
 		errno = rec_err;
 		perror("Read error");
 		free(header);
-		fprintf(stderr, "header freed\n");
 		free(msg_recv);
-		fprintf(stderr, "msg_recv freed\n");
 		return rec_sz;
 	}
 	
+	// While loop to receive full read message
 	ssize_t read  = 0; 
 	ssize_t rv = 0; 
 	char buffer[101];
@@ -249,18 +266,16 @@ ssize_t read(int fd, void *buf, size_t count) {
 			break; 
 		}
 		if (read > rec_sz) {
-			fprintf(stderr, "oversize read ...: %ld\n", read);
+			fprintf(stderr, "Oversize read ...: %ld\n", read);
 			exit(-1);
 		}
 	}
-	memcpy(buf, pkg, rec_sz);
-	free(pkg);
-	fprintf(stderr, "pkg freed\n");
 
+	memcpy(buf, pkg, rec_sz);
+
+	free(pkg);
 	free(header);
-	fprintf(stderr, "header freed\n");
 	free(msg_recv);
-	fprintf(stderr, "msg_recv freed\n");
 
 	return rec_sz;
 }
@@ -268,6 +283,7 @@ ssize_t read(int fd, void *buf, size_t count) {
 /**
  * @brief write()  writes  up  to count bytes from the buffer starting at buf to the 
  * file referred to by the file descriptor fd.
+ * If fd > OFFSET, handle file in remote server, if fd < OFFSET, handle local.
  * 
  * @return ssize_t On success, the number of bytes written is returned.  On error, -1 is 
  * returned, and errno is set to indicate the cause of the error.
@@ -322,6 +338,7 @@ ssize_t write(int fd, const void *buf, size_t count) {
  */
 off_t lseek(int fd, off_t offset, int whence) {
 	fprintf(stderr, "mylib: lseek\n");
+
 	int total_length = sizeof(general_wrapper) + sizeof(lseek_payload);
 	general_wrapper *header = (general_wrapper *)malloc(total_length); 
 	header->total_len = total_length;
@@ -334,18 +351,20 @@ off_t lseek(int fd, off_t offset, int whence) {
 	fprintf(stderr, "fd: %d\n", lseek_data->fd);
 	fprintf(stderr, "offset : %ld\n", lseek_data->offset);
 	fprintf(stderr, "whence : %d\n", lseek_data->whence);
+
 	// Send and receive data
 	void *msg_recv = malloc(sizeof(off_t) + sizeof(int));
 	fprintf(stderr, "fuck\n");
 	send_recv_msg(header, msg_recv, sizeof(off_t) + sizeof(int));
 
-	// Receive information [int fd, int err] from server
+	// Receive information [off_t rec_loc, int rec_err] from server
 	off_t rec_loc = *((off_t *)msg_recv);
 	int rec_err = *(int *)(msg_recv + sizeof(off_t));
 	if (rec_loc < 0 || rec_err != 0) {
 		errno = rec_err;
 		perror("Lseek error");
 	}
+
 	free(header);
 	free(msg_recv);
 
@@ -361,6 +380,7 @@ off_t lseek(int fd, off_t offset, int whence) {
  */
 int __xstat(int ver, const char *pathname, struct stat *statbuf) {
 	fprintf(stderr, "mylib: __xstat\n");
+
 	int path_length = strlen(pathname) + 1;
 	int total_length = sizeof(general_wrapper) + 
 						sizeof(stat_payload) + path_length;
@@ -388,6 +408,7 @@ int __xstat(int ver, const char *pathname, struct stat *statbuf) {
 		errno = rec_err;
 		perror("__xstat error");
 	}
+
 	free(header);
 	free(msg_recv);
 
@@ -404,6 +425,7 @@ int __xstat(int ver, const char *pathname, struct stat *statbuf) {
  */
 int unlink(const char *pathname) {
 	fprintf(stderr, "mylib: unlink\n");
+
 	int path_length = strlen(pathname) + 1;
 	int total_length = sizeof(general_wrapper) + 
 						sizeof(unlink_payload) + path_length;
@@ -428,6 +450,7 @@ int unlink(const char *pathname) {
 		errno = rec_err;
 		perror("unlink error");
 	}
+
 	free(header);
 	free(msg_recv);
 
@@ -445,6 +468,7 @@ int unlink(const char *pathname) {
  */
 ssize_t getdirentries(int fd, char *buf, size_t nbytes , off_t *basep) {
 	fprintf(stderr, "mylib: getdirentries\n");
+
 	int total_length = sizeof(general_wrapper) + 
 						sizeof(getdirentries_payload);
 	general_wrapper *header = (general_wrapper *)malloc(total_length); 
@@ -454,6 +478,7 @@ ssize_t getdirentries(int fd, char *buf, size_t nbytes , off_t *basep) {
 	dir_data->fd = fd;
 	dir_data->nbyte = nbytes;
 	dir_data->basep =  *basep;
+
 	fprintf(stderr, "fildes: %d\n", dir_data->fd);
 	fprintf(stderr, "nbytes : %d\n", (int)dir_data->nbyte);
 	fprintf(stderr, "basep : %d\n", (int)dir_data->basep);
@@ -474,11 +499,10 @@ ssize_t getdirentries(int fd, char *buf, size_t nbytes , off_t *basep) {
 		errno = rec_err;
 		perror("Getdirentries error");
 	}
+
 	free(header);
 	free(msg_recv);
 
-	fprintf(stderr, "Getdirentries size: %ld\n", rec_sz); 
-	fprintf(stderr, "Rebase: %ld\n", rec_sz); 
 	return rec_sz;
 }
 
@@ -495,6 +519,7 @@ ssize_t getdirentries(int fd, char *buf, size_t nbytes , off_t *basep) {
  */
 struct dirtreenode* getdirtree(const char *pathname) {
 	fprintf(stderr, "mylib: getdirtree\n");
+
 	int path_length = strlen(pathname) + 1;
 	int total_length = sizeof(general_wrapper) + 
 						sizeof(getdirtree_payload) + path_length;
@@ -557,26 +582,31 @@ struct dirtreenode* getdirtree(const char *pathname) {
  */
 struct dirtreenode* deserialize(char **str) {
 	struct dirtreenode *root = (struct dirtreenode *)malloc(sizeof(struct dirtreenode));
+
 	size_t path_length = *((size_t *)(*str));
 	root->num_subdirs = *(int *)((*str) + sizeof(size_t));
 	fprintf(stderr, "path length: %ld\n", path_length);
 	fprintf(stderr, "sub dir num: %d\n", root->num_subdirs);
 	char *name = (char *)malloc(sizeof(path_length));
-	fprintf(stderr, "here.\n");
 	memcpy(name, (*str) + sizeof(size_t) + sizeof(int), path_length);
 	root->name = name;
 	fprintf(stderr, "tree: %s\n", root->name);
 
+	// Keep pointer at the end of the string stream
 	(*str) += sizeof(size_t) + sizeof(int) + path_length;
+
+	// Allocate Space if child number is non-zero
 	if (root->num_subdirs) {
 		struct dirtreenode **children = (struct dirtreenode **)
 					malloc(root->num_subdirs * sizeof(struct dirtreenode *));
 		root->subdirs = children;
 	}
+
 	for (int i = 0; i < root->num_subdirs; i++) {
 		fprintf(stderr, "i: %d\n", i);
 		root->subdirs[i] = deserialize(str);
 	}
+
 	return root;
 }
 
