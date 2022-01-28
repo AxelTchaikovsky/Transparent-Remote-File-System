@@ -12,6 +12,7 @@
 #include <err.h>
 #include <errno.h>
 #include "marshall.h"
+#include "../include/dirtree.h"
 
 #define MAXMSGLEN 100
 #define OFFSET 800
@@ -26,6 +27,9 @@ void do_stat(void *stat_data, int len);
 void do_lseek(void *lseek_data, int len);
 void do_unlink(void *unlink_data, int len);
 void do_getdirentries(void *dir_data, int len);
+void do_getdirtree(void *dir_data, int len); 
+size_t tree_len(struct dirtreenode *root);
+size_t serialize(struct dirtreenode *root, char *str); 
 
 int main(int argc, char**argv) {
 	char buf[MAXMSGLEN+1];
@@ -121,6 +125,9 @@ int main(int argc, char**argv) {
                 break;
             case GETDIRENTRIES:
                 do_getdirentries(pkg->payload, total_length - 2 * sizeof(int));
+                break;
+            case GETDIRTREE:
+                do_getdirtree(pkg->payload, total_length - 2 * sizeof(int));
                 break;
             default:
                 fprintf(stderr, "Default...\n");
@@ -341,5 +348,62 @@ void do_getdirentries(void *dir_data, int len) {
     send(sessfd, pkg, alloc_sz, 0);
     free(pkg);
     free(data);
+}
+
+void do_getdirtree(void *dir_data, int len) {
+    fprintf(stderr, "mylib: unlink\n");
+    getdirtree_payload *data = (getdirtree_payload *)malloc(len);
+    memcpy(data, dir_data, len);
+
+    char *path = (char *)malloc(data->path_len);
+    memcpy(path, data->pathname, data->path_len);
+    path[data->path_len] = 0;
+
+    fprintf(stderr, "path_len: %d\n", data->path_len);
+    fprintf(stderr, "path: %s\n", path);
+
+    // Call getdirtree()
+    struct dirtreenode* root = getdirtree(data->pathname);
+
+    size_t tree_length = 0;
+    char *serial = NULL;
+    if (root)  {
+        // Serialize tree
+        tree_length = tree_len(root);
+        serial = (char *)malloc(tree_len(root));
+        serialize(root, serial);
+    }
+
+    // Send message to client
+    void *pkg = malloc(sizeof(size_t) + sizeof(int) + tree_length);
+    memcpy(pkg, &tree_length, sizeof(size_t));
+    memcpy(pkg + sizeof(size_t), &errno, sizeof(int));
+    memcpy(pkg + sizeof(size_t) + sizeof(int), serial, tree_length);
+    send(sessfd, pkg, sizeof(size_t) + sizeof(int) + tree_length, 0);
+    free(pkg);
+    free(data);
+}
+
+size_t tree_len(struct dirtreenode *root) {
+    size_t len = sizeof(size_t) + sizeof(int) + strlen(root->name) + 1;
+    for (int i = 0; i < root->num_subdirs; i++) {
+        len += tree_len(root->subdirs[i]);
+    }
+    return len;
+}
+
+size_t serialize(struct dirtreenode *root, char *str) {
+    size_t itr = 0, path_len = strlen(root->name) + 1;
+    memcpy(str + itr, &path_len, sizeof(size_t));
+    itr += sizeof(size_t);
+    memcpy(str + itr, &root->num_subdirs, sizeof(int));
+    itr += sizeof(int);
+    memcpy(str + itr, root->name, strlen(root->name) + 1);
+    itr += (strlen(root->name) + 1);
+
+    for (int i = 0; i < root->num_subdirs; i++) {
+        itr += serialize(root->subdirs[i], str + itr); 
+    }
+    return itr;
 }
 

@@ -9,6 +9,7 @@
 #define STAT 5
 #define UNLINK 6
 #define GETDIRENTRIES 7
+#define GETDIRTREE 8
 
 typedef struct general_wrapper {
     int total_len;
@@ -56,3 +57,8 @@ typedef struct getdirentries_payload {
     size_t nbyte;
     off_t basep;
 } getdirentries_payload; 
+
+typedef struct getdirtree_payload {
+    int path_len;
+    char pathname[0];
+} getdirtree_payload; 

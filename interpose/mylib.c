@@ -17,6 +17,9 @@
 #include <err.h>
 #include <errno.h>
 #include "marshall.h"
+#include "../include/dirtree.h"
+
+#define MAXMSGLEN 100
 
 // The following line declares a function pointer with the same prototype as the open function.  
 int (*orig_open)(const char *pathname, int flags, ...);  // mode_t mode is needed when flags includes O_CREAT
@@ -29,6 +32,7 @@ int (*orig_unlink)(const char *pathname);
 ssize_t (*orig_getdirentries)(int fd, char *buf, size_t nbytes , off_t *basep);
 struct dirtreenode* (*orig_getdirtree)(const char *path);
 void (*orig_freedirtree)(struct dirtreenode* dt);
+struct dirtreenode* deserialize(char **str);
 
 int sockfd = -1;
 
@@ -289,7 +293,6 @@ int __xstat(int ver, const char *pathname, struct stat *statbuf) {
 }
 
 int unlink(const char *pathname) {
-	// send_msg("unlink\n");
 	fprintf(stderr, "mylib: unlink\n");
 	int path_length = strlen(pathname) + 1;
 	int total_length = sizeof(general_wrapper) + 
@@ -322,7 +325,6 @@ int unlink(const char *pathname) {
 }
 
 ssize_t getdirentries(int fd, char *buf, size_t nbytes , off_t *basep) {
-	// send_msg("getdirentries\n");
 	fprintf(stderr, "mylib: getdirentries\n");
 	int total_length = sizeof(general_wrapper) + 
 						sizeof(getdirentries_payload);
@@ -361,10 +363,85 @@ ssize_t getdirentries(int fd, char *buf, size_t nbytes , off_t *basep) {
 	return rec_sz;
 }
 
-struct dirtreenode* getdirtree(const char *path) {
-	// send_msg("getdirtree\n");
+struct dirtreenode* getdirtree(const char *pathname) {
 	fprintf(stderr, "mylib: getdirtree\n");
-	return orig_getdirtree(path);
+	int path_length = strlen(pathname) + 1;
+	int total_length = sizeof(general_wrapper) + 
+						sizeof(getdirtree_payload) + path_length;
+	general_wrapper *header = (general_wrapper *)malloc(total_length); 
+	header->total_len = total_length;
+	header->op_code = GETDIRTREE;
+	getdirtree_payload *dir_data = (getdirtree_payload *)header->payload;
+	dir_data->path_len = path_length;
+	memcpy(dir_data->pathname, pathname, path_length);
+
+	fprintf(stderr, "path_len: %d\n", dir_data->path_len);
+    fprintf(stderr, "path: %s\n", dir_data->pathname);
+
+	// Send and receive data
+	void *msg_recv = malloc(sizeof(size_t) + sizeof(int));
+	send_recv_msg(header, msg_recv, sizeof(size_t) + sizeof(int));
+
+	// Receive information [int fd, int err] from server
+	size_t rec_sz = *((size_t *)msg_recv);
+	int rec_err = *(int *)(msg_recv + sizeof(size_t));
+	if (rec_sz == 0 || rec_err != 0) {
+		errno = rec_err;
+		perror("getdirtree error");
+		free(header);
+		free(msg_recv);
+		return NULL;
+	}
+
+	fprintf(stderr, "rec size: %ld\n", rec_sz);
+	int read = 0;
+	ssize_t rv = 0;
+	char buf[101];
+	char *pkg = (char *)malloc(rec_sz);
+	char *pkg_iterator = pkg;
+	char **it = &pkg_iterator;
+	while ((rv = recv(sockfd, buf, MAXMSGLEN, 0)) > 0) {
+		memcpy((void *)pkg + read, buf, rv);
+		fprintf(stderr, "buf_cont: %s\n", buf);
+		read += rv;
+		if (read >= rec_sz) {
+			fprintf(stderr, "Client got tree...\n"); 
+			break; 
+		}
+	}
+
+	struct dirtreenode *root = deserialize(it);
+
+	free(header);
+	free(msg_recv);
+	free(pkg);
+
+	return root;
+}
+
+struct dirtreenode* deserialize(char **str) {
+	struct dirtreenode *root = (struct dirtreenode *)malloc(sizeof(struct dirtreenode));
+	size_t path_length = *((size_t *)(*str));
+	root->num_subdirs = *(int *)((*str) + sizeof(size_t));
+	fprintf(stderr, "path length: %ld\n", path_length);
+	fprintf(stderr, "sub dir num: %d\n", root->num_subdirs);
+	char *name = (char *)malloc(sizeof(path_length));
+	fprintf(stderr, "here.\n");
+	memcpy(name, (*str) + sizeof(size_t) + sizeof(int), path_length);
+	root->name = name;
+	fprintf(stderr, "tree: %s\n", root->name);
+
+	(*str) += sizeof(size_t) + sizeof(int) + path_length;
+	if (root->num_subdirs) {
+		struct dirtreenode **children = (struct dirtreenode **)
+					malloc(root->num_subdirs * sizeof(struct dirtreenode *));
+		root->subdirs = children;
+	}
+	for (int i = 0; i < root->num_subdirs; i++) {
+		fprintf(stderr, "i: %d\n", i);
+		root->subdirs[i] = deserialize(str);
+	}
+	return root;
 }
 
 void freedirtree(struct dirtreenode* dt) {
