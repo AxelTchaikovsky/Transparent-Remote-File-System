@@ -389,6 +389,13 @@ void do_getdirtree(void *dir_data, int len) {
     freedirtree(root);
 }
 
+/**
+ * @brief Traverse the tree using DFS, calculate the serialization size. 
+ * 
+ * @param root 
+ * @return size_t Total size needed to be allocated for the serialization 
+ * string. 
+ */
 size_t tree_len(struct dirtreenode *root) {
     size_t len = sizeof(size_t) + sizeof(int) + strlen(root->name) + 1;
     for (int i = 0; i < root->num_subdirs; i++) {
@@ -397,6 +404,15 @@ size_t tree_len(struct dirtreenode *root) {
     return len;
 }
 
+/**
+ * @brief Serialize the non-binary tree structure into a string using DFS. 
+ * Complexity O(N)
+ * 
+ * @param root Non-binary tree pointer. 
+ * @param str Serialized string. 
+ *  element structure: [size_t path_len, int children_num, char *path]
+ * @return size_t Size of the tree whose root is "root". 
+ */
 size_t serialize(struct dirtreenode *root, char *str) {
     size_t itr = 0, path_len = strlen(root->name) + 1;
     memcpy(str + itr, &path_len, sizeof(size_t));

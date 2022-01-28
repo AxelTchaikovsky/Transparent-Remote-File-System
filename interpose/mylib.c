@@ -119,9 +119,9 @@ int open(const char *pathname, int flags, ...) {
 	open_data->path_len = path_length;
 	memcpy(open_data->path, pathname, path_length);
 	fprintf(stderr, "flags: %d\n", flags);
-    fprintf(stderr, "mode: %d\n", m);
+	fprintf(stderr, "mode: %d\n", m);
 	fprintf(stderr, "path_len: %d\n", open_data->path_len);
-    fprintf(stderr, "path: %s\n", open_data->path);
+	fprintf(stderr, "path: %s\n", open_data->path);
 	fprintf(stderr, "mode_t size: %ld\n", sizeof(mode_t));
 
 	// Send and receive data
@@ -178,8 +178,7 @@ int close(int fd) {
 
 /**
  * @brief read() attempts to read up to count bytes from file descriptor fd into the buffer starting at buf.
-
-
+ * 
  * @return ssize_t On success, the number of bytes read is returned (zero  indicates  end  of
  * file), and the file position is advanced by this number.  It is not an er
  * ror if this number is smaller than the number of bytes requested; this may
@@ -334,7 +333,7 @@ int __xstat(int ver, const char *pathname, struct stat *statbuf) {
 
 	fprintf(stderr, "ver: %d\n", stat_data->ver);
 	fprintf(stderr, "path_len: %d\n", stat_data->path_len);
-    fprintf(stderr, "path: %s\n", stat_data->pathname);
+	fprintf(stderr, "path: %s\n", stat_data->pathname);
 
 	// Send and receive data
 	void *msg_recv = malloc(2 * sizeof(int));
@@ -374,7 +373,7 @@ int unlink(const char *pathname) {
 	memcpy(unlink_data->pathname, pathname, path_length);
 
 	fprintf(stderr, "path_len: %d\n", unlink_data->path_len);
-    fprintf(stderr, "path: %s\n", unlink_data->pathname);
+	fprintf(stderr, "path: %s\n", unlink_data->pathname);
 
 	// Send and receive data
 	void *msg_recv = malloc(2 * sizeof(int));
@@ -465,7 +464,7 @@ struct dirtreenode* getdirtree(const char *pathname) {
 	memcpy(dir_data->pathname, pathname, path_length);
 
 	fprintf(stderr, "path_len: %d\n", dir_data->path_len);
-    fprintf(stderr, "path: %s\n", dir_data->pathname);
+	fprintf(stderr, "path: %s\n", dir_data->pathname);
 
 	// Send and receive data
 	void *msg_recv = malloc(sizeof(size_t) + sizeof(int));
