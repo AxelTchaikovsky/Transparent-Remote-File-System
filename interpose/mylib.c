@@ -36,6 +36,14 @@ struct dirtreenode* deserialize(char **str);
 
 int sockfd = -1;
 
+/**
+ * @brief Send marshalled message to server, wait for server to communicate back, 
+ * receive the message from server (Usually return value and errno). 
+ * 
+ * @param msg_sent Marshalled message. 
+ * @param msg_recv Pre malloced buffer for message receiving. 
+ * @param recv_len The length of message to be received. 
+ */
 void send_recv_msg(general_wrapper *msg_sent, void *msg_recv, int recv_len) {
 	char *serverip;
 	char *serverport;
@@ -79,10 +87,16 @@ void send_recv_msg(general_wrapper *msg_sent, void *msg_recv, int recv_len) {
 	rv = recv(sockfd, msg_recv, recv_len, 0);	// get message
 	if (rv<0) err(1,0);			// in case something went wrong
 	fprintf(stderr, "Message Received...\n");
-	// rec[rv]=0;				// null terminate string to print
 }
 
-// This is our replacement for the open function from libc.
+/**
+ * @brief Replacement for the open function from libc. Open file on remote server. 
+ * 
+ * @param pathname File path string. 
+ * @param flags See "man 2 open"
+ * @param ... (mode_t mode)
+ * @return int 
+ */
 int open(const char *pathname, int flags, ...) {
 	mode_t m=0;
 	if (flags & O_CREAT) {
@@ -91,6 +105,7 @@ int open(const char *pathname, int flags, ...) {
 		m = va_arg(a, mode_t);
 		va_end(a);
 	}
+
 	// Marshall data [int total_length, int op_code, int flags, int path_len, mode_t mode, char path[0]]
 	int path_length = strlen(pathname) + 1;
 	int total_length = sizeof(general_wrapper) + 
@@ -126,6 +141,13 @@ int open(const char *pathname, int flags, ...) {
 	return rec_fd;
 }
 
+/**
+ * @brief Replacement for the close function from libc. Closes a file descriptor on remote server, 
+ * so that it no longer refers to any file and may be reused. 
+ * 
+ * @return int returns  zero on success.  On error, -1 is returned, and errno is
+       set appropriately.
+ */
 int close(int fd) {
 	fprintf(stderr, "mylib: close\n");
 	// Marshall data
@@ -154,6 +176,21 @@ int close(int fd) {
 	return rec_fd;
 }
 
+/**
+ * @brief read() attempts to read up to count bytes from file descriptor fd into the buffer starting at buf.
+
+
+ * @return ssize_t On success, the number of bytes read is returned (zero  indicates  end  of
+ * file), and the file position is advanced by this number.  It is not an er
+ * ror if this number is smaller than the number of bytes requested; this may
+ * happen  for  example  because fewer bytes are actually available right now
+ * (maybe because we were close to end-of-file, or  because  we  are  reading
+ * from  a  pipe, or from a terminal), or because read() was interrupted by a
+ * signal. 
+ * 
+ * On error, -1 is returned, and errno is set appropriately.  In  this  case,
+ * it is left unspecified whether the file position (if any) changes.
+ */
 ssize_t read(int fd, void *buf, size_t count) {
 	fprintf(stderr, "mylib: read\n");
 	// Marshall data [int total_length, int op_code, int fildes, size_t nbytes] 
@@ -191,9 +228,16 @@ ssize_t read(int fd, void *buf, size_t count) {
 	return rec_sz;
 }
 
+/**
+ * @brief write()  writes  up  to count bytes from the buffer starting at buf to the 
+ * file referred to by the file descriptor fd.
+ * 
+ * @return ssize_t On success, the number of bytes written is returned.  On error, -1 is 
+ * returned, and errno is set to indicate the cause of the error.
+ */
 ssize_t write(int fd, const void *buf, size_t count) {
 	fprintf(stderr, "mylib: write\n");
-	// Marshall data [int total_length, int op_code, int fildes, size_t nbytes, char buf[0]]
+	
 	int total_length = sizeof(general_wrapper) + 
 						sizeof(read_write_payload) + count;
 	general_wrapper *header = (general_wrapper *)malloc(total_length); 
@@ -203,6 +247,7 @@ ssize_t write(int fd, const void *buf, size_t count) {
 	write_data->fildes = fd;
 	write_data->nbyte = count;
 	memcpy(write_data->buf, buf, count);
+
 	fprintf(stderr, "fildes: %d\n", write_data->fildes);
 	fprintf(stderr, "nbytes : %d\n", (int)write_data->nbyte);
 	
@@ -225,6 +270,15 @@ ssize_t write(int fd, const void *buf, size_t count) {
 	return rec_sz;
 }
 
+/**
+ * @brief lseek()  repositions  the file offset of the open file description associated 
+ * with the file descriptor fd to the argument offset according  to  the 
+ * directive whence. 
+ * 
+ * @return off_t Upon  successful completion, lseek() returns the resulting offset location 
+ * as measured in bytes from the beginning of the file.  On error, the  value 
+ * (off_t) -1 is returned and errno is set to indicate the error.
+ */
 off_t lseek(int fd, off_t offset, int whence) {
 	fprintf(stderr, "mylib: lseek\n");
 	int total_length = sizeof(general_wrapper) + sizeof(lseek_payload);
@@ -257,6 +311,13 @@ off_t lseek(int fd, off_t offset, int whence) {
 	return rec_loc;
 }
 
+/**
+ * @brief return information about a file, in the buffer pointed to 
+ * by statbuf.
+ * 
+ * @return int On success, zero is returned. On error, -1 is returned, and errno is set 
+ * appropriately.
+ */
 int __xstat(int ver, const char *pathname, struct stat *statbuf) {
 	fprintf(stderr, "mylib: __xstat\n");
 	int path_length = strlen(pathname) + 1;
@@ -292,6 +353,14 @@ int __xstat(int ver, const char *pathname, struct stat *statbuf) {
 	return rec_fd;
 }
 
+/**
+ * @brief  unlink()  deletes  a  name from the filesystem.  If that name was the last 
+ * link to a file and no processes have the file open, the  file  is  deleted 
+ * and the space it was using is made available for reuse.
+ * 
+ * @return int On  success, zero is returned.  On error, -1 is returned, and errno is set 
+ * appropriately.
+ */
 int unlink(const char *pathname) {
 	fprintf(stderr, "mylib: unlink\n");
 	int path_length = strlen(pathname) + 1;
@@ -324,6 +393,15 @@ int unlink(const char *pathname) {
 	return rec_fd;
 }
 
+/**
+ * @brief Read  directory  entries  from the directory specified by fd into buf.  At 
+ * most nbytes are read.  Reading starts at offset *basep, and *basep is  up‐ 
+ * dated with the new position after reading.
+ * 
+ * @return ssize_t returns  the number of bytes read or zero when at the end 
+ * of the directory.  If an error occurs, -1 is returned, and  errno  is  set
+ * appropriately.
+ */
 ssize_t getdirentries(int fd, char *buf, size_t nbytes , off_t *basep) {
 	fprintf(stderr, "mylib: getdirentries\n");
 	int total_length = sizeof(general_wrapper) + 
@@ -363,6 +441,17 @@ ssize_t getdirentries(int fd, char *buf, size_t nbytes , off_t *basep) {
 	return rec_sz;
 }
 
+/**
+ * @brief Recusively descend through directory hierarchy starting 
+ * at directory indicated by path string.  
+ * Send to servr the pathname, first get total message length, and errno. 
+ * Then allocate space (message length), to receive the message, and deserialize
+ * into tree structure.  
+ * 
+ * 
+ * @return struct dirtreenode* pointer to root node of directory tree structure 
+ * or NULL if there was en error (will set errno in this case)
+ */
 struct dirtreenode* getdirtree(const char *pathname) {
 	fprintf(stderr, "mylib: getdirtree\n");
 	int path_length = strlen(pathname) + 1;
@@ -419,6 +508,12 @@ struct dirtreenode* getdirtree(const char *pathname) {
 	return root;
 }
 
+/**
+ * @brief Deserialize the string send from server, using DFS. 
+ * 
+ * @param str [size_t path_len, int children_num, char *path]
+ * @return struct dirtreenode* 
+ */
 struct dirtreenode* deserialize(char **str) {
 	struct dirtreenode *root = (struct dirtreenode *)malloc(sizeof(struct dirtreenode));
 	size_t path_length = *((size_t *)(*str));
@@ -444,13 +539,21 @@ struct dirtreenode* deserialize(char **str) {
 	return root;
 }
 
+/**
+ * @brief Free the tree structure, no need to contact server
+ * 
+ * @param dt 
+ */
 void freedirtree(struct dirtreenode* dt) {
 	// send_msg("freedirtree\n");
 	fprintf(stderr, "mylib: freedirtree\n");
 	return orig_freedirtree(dt);
 }
 
-// This function is automatically called when program is started
+/**
+ * @brief This function is automatically called when program is started. 
+ * 
+ */
 void _init(void) {
 	// Set function pointer orig_open to point to the original open function
 	orig_open = dlsym(RTLD_NEXT, "open");
@@ -466,6 +569,10 @@ void _init(void) {
 	fprintf(stderr, "Init mylib\n");
 }
 
+/**
+ * @brief This function is automatically called when program is finished. 
+ * 
+ */
 void _fini(void) {
 	fprintf(stderr, "sockfd: %d\n", sockfd);
 	orig_close(sockfd);
